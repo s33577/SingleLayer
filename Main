@@ -1,0 +1,245 @@
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.util.*;
+
+public class Main {
+
+    public static void main(String[] args) throws Exception {
+
+        Scanner sc = new Scanner(System.in);
+
+        System.out.print("learning rate (alpha): ");
+        double alpha = Double.parseDouble(sc.nextLine());
+
+
+
+
+        System.out.print("repetitions: ");
+        int repetitions = Integer.parseInt(sc.nextLine());
+
+        System.out.print("(1) test your own text. (2) test a set of texts: ");
+        String choice = sc.nextLine();
+
+        if (choice.equals("1")) {
+            System.out.print("Enter text to classify: ");
+            String text = sc.nextLine();
+
+
+            double[] testVector = textToVector(text);
+
+            System.out.print("Provide a training file (e.g., lang.train.csv): ");
+
+            String trainFile = sc.nextLine();
+
+            // Train the model once
+            Model trainedModel = trainNetwork(trainFile, alpha, repetitions);
+
+            // Predict
+            String result = predict(trainedModel, testVector);
+            System.out.println("Predicted Language: " + result);
+
+        } else if (choice.equals("2")) {
+            System.out.print("Provide a file to test (e.g., lang.test.csv): ");
+
+            String testFile = sc.nextLine();
+
+
+
+            System.out.print("Provide a training file (e.g., lang.train.csv): ");
+            String trainFile = sc.nextLine();
+
+            // Train the model once using the training file
+            System.out.println("Training network... please wait.");
+
+            Model trainedModel = trainNetwork(trainFile, alpha, repetitions);
+
+            System.out.println("Training complete. Testing...");
+
+            BufferedReader testReader = new BufferedReader(new FileReader(testFile));
+
+            int correct = 0;
+            int total = 0;
+            String line;
+
+            while ((line = testReader.readLine()) != null) {
+                if (line.trim().isEmpty()) continue;
+
+                // split(",", 2) parsing
+                String[] parts = line.split(",", 2);
+
+                if (parts.length < 2) continue;
+
+
+                String actualLabel = parts[0].trim();
+                String text = parts[1].trim();
+
+                double[] features = textToVector(text);
+                String predicted = predict(trainedModel, features);
+
+                //Prinbt the wrong ones
+                if (!predicted.equals(actualLabel)) {
+                    System.out.println("\n[INCORRECT] Actual: " + actualLabel + " | Predicted: " + predicted);
+                }
+
+                if (predicted.equals(actualLabel)) {
+                    correct++;
+                }
+                total++;
+            }
+            testReader.close();
+
+            System.out.println("\nCorrect answers: " + correct);
+            System.out.println("Total tested: " + total);
+            System.out.println("Accuracy: " + (double) correct / total);
+        }
+        sc.close();
+    }
+
+    // Converts a text string into a normalized.
+    static double[] textToVector(String text) {
+        double[] vec = new double[26];
+        text = text.toLowerCase();
+
+        // Count occurrences
+        for (char c : text.toCharArray()) {
+
+            if (c >= 'a' && c <= 'z') {
+
+                vec[c - 'a']++;
+            }
+        }
+
+        // Normalize the vector (Euclidean length)
+        double length = 0.0;
+
+        for (double v : vec) {
+            length += v * v;
+        }
+        length = Math.sqrt(length);
+
+        if (length > 0) {
+            for (int i = 0; i < 26; i++) {
+                vec[i] /= length;
+            }
+        }
+
+        return vec;
+
+    }
+
+    // Trains a single-layer neural network with one perceptron per language. Uses a linear activation function: f(net) = net
+    static Model trainNetwork(String trainFile, double alpha, int repetitions) throws Exception {
+        BufferedReader reader = new BufferedReader(new FileReader(trainFile));
+
+        List<double[]> trainData = new ArrayList<>();
+        List<String> trainLabels = new ArrayList<>();
+        List<String> languages = new ArrayList<>();
+
+        String line;
+
+        // Read and parse the training file
+        while ((line = reader.readLine()) != null) {
+            if (line.trim().isEmpty()) continue;
+
+            String[] parts = line.split(",", 2);
+            if (parts.length < 2) continue;
+
+            String label = parts[0].trim();
+
+            String text = parts[1].trim();
+
+            if (!languages.contains(label)) {
+
+                languages.add(label);
+            }
+
+            trainData.add(textToVector(text));
+            trainLabels.add(label);
+        }
+        reader.close();
+
+        if (trainData.isEmpty()) {
+            throw new Exception("Error: Training data empty");
+        }
+
+        int numFeatures = 26;
+        int numLanguages = languages.size();
+
+        // weights[languageIndex][featureIndex]
+        double[][] weights = new double[numLanguages][numFeatures];
+        double[] theta = new double[numLanguages];
+
+        Random rand = new Random();
+        for (int i = 0; i < numLanguages; i++) {
+            theta[i] = rand.nextDouble();
+            for (int j = 0; j < numFeatures; j++) {
+
+                weights[i][j] = rand.nextDouble();
+            }
+        }
+
+        // Train
+        for (int e = 0; e < repetitions; e++) {
+            for (int i = 0; i < trainData.size(); i++) {
+                double[] x = trainData.get(i);
+                String actualLabel = trainLabels.get(i);
+
+                // Train each perceptron
+                for (int l = 0; l < numLanguages; l++) {
+
+                    double d = languages.get(l).equals(actualLabel) ? 1.0 : 0.0;
+
+                    double net = 0.0;
+                    for (int j = 0; j < numFeatures; j++) {
+                        net += weights[l][j] * x[j];
+                    }
+                    net -= theta[l];
+
+                    // f(net) = net
+                    double y = net;
+
+                    // Calculate error
+                    double error = d - y;
+
+                    // Adjust weights and bias
+                    for (int j = 0; j < numFeatures; j++) {
+                        weights[l][j] += alpha * error * x[j];
+                    }
+                    theta[l] -= alpha * error;
+                }
+            }
+        }
+
+
+        Model model = new Model();
+        model.weights = weights;
+        model.theta = theta;
+        model.languages = languages;
+
+        return model;
+    }
+
+    /**
+     * predicted language.
+     */
+    static String predict(Model model, double[] vector) {
+        double maxNet = -Double.MAX_VALUE;
+        String predictedLang = null;
+
+        // perceptron with the highest activation
+        for (int l = 0; l < model.languages.size(); l++) {
+            double net = 0.0;
+            for (int j = 0; j < 26; j++) {
+                net += model.weights[l][j] * vector[j];
+            }
+            net -= model.theta[l];
+
+            if (net > maxNet) {
+                maxNet = net;
+                predictedLang = model.languages.get(l);
+            }
+        }
+
+        return predictedLang;
+    }
+}
